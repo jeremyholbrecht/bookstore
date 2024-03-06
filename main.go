@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
 
 	_ "github.com/lib/pq"
 )
@@ -23,24 +24,38 @@ type Book struct {
 	price  float32
 }
 
-func main() {
-	fmt.Println("Weclome to the bookstore :)")
+var db *sql.DB
 
+func init() {
+	var err error
 	//connection string
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
-
-	//open db
-	db, err := sql.Open("postgres", psqlconn)
+	db, err = sql.Open("postgres", psqlconn)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if err = db.Ping(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func main() {
+	http.HandleFunc("/books", booksIndex)
+	http.ListenAndServe(":3000", nil)
+}
+
+func booksIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, http.StatusText(405), 405)
+		return
 	}
 
 	rows, err := db.Query("SELECT * FROM books")
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, http.StatusText(500), 500)
+		return
 	}
-	//important that the defer statement should come after you check for errors otherwise if db.Query() returns an error
-	//you'll get a panic trying to close a nil resultset
 	defer rows.Close()
 
 	bks := make([]*Book, 0)
@@ -48,16 +63,17 @@ func main() {
 		bk := new(Book)
 		err := rows.Scan(&bk.isbn, &bk.title, &bk.author, &bk.price)
 		if err != nil {
-			log.Fatal(err)
+			http.Error(w, http.StatusText(500), 500)
+			return
 		}
 		bks = append(bks, bk)
 	}
 	if err = rows.Err(); err != nil {
-		log.Fatal(err)
+		http.Error(w, http.StatusText(500), 500)
+		return
 	}
 
 	for _, bk := range bks {
-		fmt.Printf("%s, %s, %s,€%.2f\n", bk.isbn, bk.title, bk.author, bk.price)
+		fmt.Fprintf(w, "%s, %s, %s, £%.2f\n", bk.isbn, bk.title, bk.author, bk.price)
 	}
-
 }
